@@ -8,6 +8,7 @@ var STATE = (function(){
   var FILE;
   var MSGS;
   
+  var uploadedFileName;
   var filterFunction;
   var selectedChannel;
   var currentPage;
@@ -59,6 +60,10 @@ var STATE = (function(){
     triggerUsersRefreshed();
     triggerChannelsRefreshed();
     triggerMessagesRefreshed();
+  };
+  
+  ROOT.setUploadedFileName = function(name){
+    uploadedFileName = name;
   };
 
   ROOT.getChannelName = function(channel){
@@ -139,14 +144,33 @@ var STATE = (function(){
         "contents": ("m" in message) ? message.m : null,
         "embeds": message.e,
         "attachments": message.a,
-        "edit": ("te" in message) ? message.te : (message.f & 1) === 1
+        "edit": ("te" in message) ? message.te : (message.f & 1) === 1,
+        "jump": key
       };
     });
+  };
+  
+  ROOT.navigateToMessage = function(id){
+    if (!MSGS){
+      return 0;
+    }
+    
+    var index = MSGS.indexOf(id);
+    
+    if (index == -1){
+      return 0;
+    }
+    
+    currentPage = Math.max(1, Math.min(ROOT.getPageCount(), 1 + Math.floor(index / messagesPerPage)));
+    triggerMessagesRefreshed();
+    return index % messagesPerPage;
   };
 
   // ----------
   // Filtering
   // ----------
+  
+  ROOT.hasActiveFilter = false;
   
   ROOT.setActiveFilter = function(filter){
     switch(filter ? filter.type : ""){
@@ -175,11 +199,28 @@ var STATE = (function(){
         break;
     }
     
+    ROOT.hasActiveFilter = filterFunction != null;
+    
     triggerChannelsRefreshed(selectedChannel);
     
     if (selectedChannel){
       ROOT.selectChannel(selectedChannel); // resets current page and updates messages
     }
+  };
+  
+  ROOT.saveFilteredMessages = function(){
+    var saveFileName = "dht-filtered.txt";
+    
+    if (uploadedFileName){
+      if (uploadedFileName.includes("filtered")){
+        saveFileName = uploadedFileName;
+      }
+      else{
+        saveFileName = uploadedFileName.replace(".", "-filtered.");
+      }
+    }
+    
+    DOM.downloadTextFile(saveFileName, FILE.filterToJson(filterFunction));
   };
   
   // -----

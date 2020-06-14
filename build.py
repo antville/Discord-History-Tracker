@@ -5,29 +5,26 @@ import glob
 import shutil
 import sys
 import os
+import re
 import distutils.dir_util
 
 
-VERSION_SHORT = "BETA v.16a"
-VERSION_FULL = VERSION_SHORT + ", released 20 Sep 2019"
+VERSION_SHORT = "v.23"
+VERSION_FULL = VERSION_SHORT + ", released 19 May 2020"
 
 
 EXEC_UGLIFYJS_WIN = "{2}/lib/uglifyjs.cmd --parse bare_returns --compress --mangle toplevel --mangle-props keep_quoted,reserved=[{3}] --output \"{1}\" \"{0}\""
 EXEC_UGLIFYJS_AUTO = "uglifyjs --parse bare_returns --compress --mangle toplevel --mangle-props keep_quoted,reserved=[{3}] --output \"{1}\" \"{0}\""
-EXEC_YUI = "java -jar lib/yuicompressor-2.4.8.jar --charset utf-8 --line-break 160 --type css -o \"{1}\" \"{0}\""
 
 USE_UGLIFYJS = "--nominify" not in sys.argv
-USE_JAVA = "--nominify" not in sys.argv
+USE_MINIFICATION = "--nominify" not in sys.argv
 BUILD_WEBSITE = "--website" in sys.argv
 CLIPBOARD_TRACKER = "--copytracker" in sys.argv
 
 WORKING_DIR = os.getcwd()
 
 
-if USE_JAVA and shutil.which("java") is None:
-  USE_JAVA = False
-  print("Could not find 'java', CSS minification will be disabled")
-
+# UglifyJS Setup
 
 if os.name == "nt":
   EXEC_UGLIFYJS = EXEC_UGLIFYJS_WIN
@@ -39,15 +36,50 @@ else:
     print("Could not find 'uglifyjs', JS minification will be disabled")
 
 
-with open("reserve.txt", "r") as reserved:
-  RESERVED_PROPS = ",".join(line.strip() for line in reserved.readlines())
+if USE_UGLIFYJS:
+  with open("reserve.txt", "r") as reserved:
+    RESERVED_PROPS = ",".join(line.strip() for line in reserved.readlines())
 
+
+# File Utilities
 
 def combine_files(input_pattern, output_file):
+  is_first_file = True
+  
   with fileinput.input(sorted(glob.glob(input_pattern))) as stream:
     for line in stream:
+      if stream.isfirstline():
+        if is_first_file:
+          is_first_file = False
+        else:
+          output_file.write("\n")
+      
       output_file.write(line.replace("{{{version:full}}}", VERSION_FULL))
 
+
+def minify_css(input_file, output_file):
+  if not USE_MINIFICATION:
+    if input_file != output_file:
+      shutil.copyfile(input_file, output_file)
+    
+    return
+  
+  with open(input_file, "r") as fin:
+    css = fin.read()
+  
+  css = re.sub(r"^\s+(.+?):\s*(.+?)(?:\s*(!important))?;\n", r"\1:\2\3;", css, flags = re.M) # remove spaces after colons
+  css = re.sub(r"\{\n", r"{", css, flags = re.M) # remove new lines after {
+  css = re.sub(r"\n\}", r"}", css, flags = re.M) # remove new lines before }
+  css = re.sub(r"\n\n", r"\n", css, flags = re.M) # remove empty lines
+  css = re.sub(r";\}$", r"}", css, flags = re.M) # remove last semicolons
+  css = re.sub(r"rgb\((.*?),\s*(.*?),\s*(.*?)\)", r"rgb(\1,\2,\3)", css, flags = re.M) # remove spaces after commas in rgb()
+  css = re.sub(r"rgba\((.*?),\s*(.*?),\s*(.*?),\s*(.*?)\)", r"rgba(\1,\2,\3,\4)", css, flags = re.M) # remove spaces after commas in rgba()
+  
+  with open(output_file, "w") as out:
+    out.write(css)
+
+
+# Build System
 
 def build_tracker_html():
   output_file_raw = "bld/track.js"
@@ -100,25 +132,21 @@ def build_tracker_userscript():
     out.write(userscript_contents[1])
 
 
-def build_renderer():
+def build_viewer():
   output_file = "bld/viewer.html"
-  input_html = "src/renderer/index.html"
+  input_html = "src/viewer/index.html"
   
-  input_css_pattern = "src/renderer/*.css"
+  input_css_pattern = "src/viewer/styles/*.css"
   tmp_css_file_combined = "bld/viewer.tmp.css"
   tmp_css_file_minified = "bld/viewer.min.css"
   
   with open(tmp_css_file_combined, "w") as out:
     combine_files(input_css_pattern, out)
   
-  if USE_JAVA:
-    os.system(EXEC_YUI.format(tmp_css_file_combined, tmp_css_file_minified))
-  else:
-    shutil.copyfile(tmp_css_file_combined, tmp_css_file_minified)
-    
+  minify_css(tmp_css_file_combined, tmp_css_file_minified)
   os.remove(tmp_css_file_combined)
   
-  input_js_pattern = "src/renderer/*.js"
+  input_js_pattern = "src/viewer/scripts/*.js"
   tmp_js_file_combined = "bld/viewer.tmp.js"
   tmp_js_file_minified = "bld/viewer.min.js"
   
@@ -172,10 +200,10 @@ def build_website():
   shutil.copyfile(tracker_file_html, "bld/web/build/track.html")
   shutil.copyfile(tracker_file_userscript, "bld/web/build/track.user.js")
   shutil.copyfile(viewer_file, "bld/web/build/viewer.html")
-  
-  if USE_JAVA:
-    os.system(EXEC_YUI.format(web_style_file, web_style_file))
+  minify_css(web_style_file, web_style_file)
 
+
+# Build Process
 
 os.makedirs("bld", exist_ok = True)
 
@@ -185,8 +213,8 @@ build_tracker_html()
 print("Building tracker userscript...")
 build_tracker_userscript()
 
-print("Building renderer...")
-build_renderer()
+print("Building viewer...")
+build_viewer()
 
 if BUILD_WEBSITE:
   print("Building website...")

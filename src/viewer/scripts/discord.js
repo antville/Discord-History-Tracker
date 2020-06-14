@@ -57,7 +57,7 @@ var DISCORD = (function(){
       
       templateMessage = new TEMPLATE([
         "<div>",
-        "<h2><strong class='username'>{user.name}</strong><span class='info time'>{timestamp}</span>{edit}</h2>",
+        "<h2><strong class='username'>{user.name}</strong><span class='info time'>{timestamp}</span>{edit}{jump}</h2>",
         "<div class='message'>{contents}{embeds}{attachments}</div>",
         "</div>"
       ].join(""));
@@ -170,7 +170,10 @@ var DISCORD = (function(){
           }).join("");
         }
         else if (property === "edit"){
-          return value ? "<span class='info edited'>(edited" + (value > 1 ? " " + getHumanReadableTime(value) : "") + ")</span>" : "";
+          return value ? "<span class='info edited'>Edited" + (value > 1 ? " " + getHumanReadableTime(value) : "") + "</span>" : "";
+        }
+        else if (property === "jump"){
+          return STATE.hasActiveFilter ? "<span class='info jump' data-jump='" + value + "'>Jump to message</span>" : "";
         }
       });
     }
